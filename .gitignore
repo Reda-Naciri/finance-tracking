@@ -1,0 +1,89 @@
+# .NET / C# Backend
+Server/bin/
+Server/obj/
+Server/*.db
+Server/*.db-shm
+Server/*.db-wal
+Server/*.mdf
+Server/*.ldf
+Server/.vs/
+Server/.vscode/
+Server/*.user
+Server/*.suo
+Server/*.userosscache
+Server/*.sln.docstates
+Server/[Dd]ebug/
+Server/[Dd]ebugPublic/
+Server/[Rr]elease/
+Server/[Rr]eleases/
+Server/x64/
+Server/x86/
+Server/[Ww][Ii][Nn]32/
+Server/[Aa][Rr][Mm]/
+Server/[Aa][Rr][Mm]64/
+Server/bld/
+Server/[Bb]in/
+Server/[Oo]bj/
+Server/[Ll]og/
+Server/[Ll]ogs/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / React Frontend
+Client/node_modules/
+Client/dist/
+Client/.vite/
+Client/.env.local
+Client/.env.development.local
+Client/.env.test.local
+Client/.env.production.local
+Client/npm-debug.log*
+Client/yarn-debug.log*
+Client/yarn-error.log*
+Client/pnpm-debug.log*
+Client/lerna-debug.log*
+Client/.DS_Store
+Client/coverage/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Environment files (keep templates, ignore local overrides)
+.env.local
+*.local
+
+# Build outputs
+**/dist/
+**/build/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database files
+*.db
+*.mdf
+*.ldf
+*.db-shm
+*.db-wal
+
+# Docker volumes
+docker-data/
+
+# Windows reserved filenames
+nul
+con
+prn
+aux

@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    ports:
+      - "5235:5235"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5235
+      - ConnectionStrings__DefaultConnection=Data Source=finance.db
+    volumes:
+      - finance-data:/app
+    networks:
+      - finance-network
+
+  frontend:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - finance-network
+
+volumes:
+  finance-data:
+
+networks:
+  finance-network:
+    driver: bridge
