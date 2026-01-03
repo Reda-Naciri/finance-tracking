@@ -1,12 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copy csproj and restore dependencies
-COPY ["Finance Tracking.csproj", "./"]
-RUN dotnet restore "Finance Tracking.csproj"
-
-# Copy everything else and build
+# Copy everything
 COPY . .
+
+# Restore, build and publish
+RUN dotnet restore "Finance Tracking.csproj"
 RUN dotnet build "Finance Tracking.csproj" -c Release -o /app/build
 RUN dotnet publish "Finance Tracking.csproj" -c Release -o /app/publish
 
