@@ -4,10 +4,13 @@ WORKDIR /src
 # Copy everything
 COPY . .
 
-# Restore, build and publish
-RUN dotnet restore "Finance Tracking.csproj"
-RUN dotnet build "Finance Tracking.csproj" -c Release -o /app/build
-RUN dotnet publish "Finance Tracking.csproj" -c Release -o /app/publish
+# List files for debugging
+RUN ls -la
+
+# Restore, build and publish using wildcard to find .csproj
+RUN dotnet restore *.csproj
+RUN dotnet build *.csproj -c Release -o /app/build
+RUN dotnet publish *.csproj -c Release -o /app/publish
 
 # Build runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
