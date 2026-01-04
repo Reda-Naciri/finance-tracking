@@ -9,22 +9,34 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
+// Log which connection string is being used (for debugging)
+Console.WriteLine($"DATABASE_URL env: {(Environment.GetEnvironmentVariable("DATABASE_URL") != null ? "SET" : "NOT SET")}");
+Console.WriteLine($"Connection string starts with: {connectionString?.Substring(0, Math.Min(20, connectionString?.Length ?? 0))}...");
+
+if (string.IsNullOrEmpty(connectionString))
+{
+    throw new InvalidOperationException("No database connection string found! Set DATABASE_URL environment variable or ConnectionStrings:DefaultConnection in appsettings.json");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     // Auto-detect database type from connection string
-    if (connectionString?.StartsWith("postgresql://") == true || connectionString?.StartsWith("postgres://") == true)
+    if (connectionString.StartsWith("postgresql://") || connectionString.StartsWith("postgres://"))
     {
         // PostgreSQL
+        Console.WriteLine("Using PostgreSQL database");
         options.UseNpgsql(connectionString);
     }
-    else if (connectionString?.Contains(".db") == true)
+    else if (connectionString.Contains(".db"))
     {
         // SQLite
+        Console.WriteLine("Using SQLite database");
         options.UseSqlite(connectionString);
     }
     else
     {
         // SQL Server (default)
+        Console.WriteLine("Using SQL Server database");
         options.UseSqlServer(connectionString);
     }
 });
