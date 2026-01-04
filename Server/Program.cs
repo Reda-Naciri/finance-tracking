@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Finance_Tracking;
 using Finance_Tracking.Data;
 using Finance_Tracking.Models;
 
@@ -92,6 +93,34 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowFrontend");
 app.UseHttpsRedirection();
 
+// Authentication middleware - extract userId from Bearer token
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value?.ToLower() ?? "";
+    if (path.Contains("/login") || path.Contains("/register"))
+    {
+        await next();
+        return;
+    }
+
+    var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(authHeader))
+    {
+        var token = authHeader.Replace("Bearer ", "").Trim();
+        if (token.StartsWith("USER_") && token.EndsWith("_AUTHENTICATED"))
+        {
+            var userIdStr = token.Replace("USER_", "").Replace("_AUTHENTICATED", "");
+            if (int.TryParse(userIdStr, out int userId))
+            {
+                context.Items["UserId"] = userId;
+                UserContext.CurrentUserId = userId;
+            }
+        }
+    }
+
+    await next();
+});
+
 // Ensure database is created
 using (var scope = app.Services.CreateScope())
 {
@@ -152,29 +181,44 @@ app.MapPost("/api/login", async (AppDbContext db, LoginRequest loginRequest) =>
 // ============ FINANCIAL ACCOUNTS ============
 
 // GET /api/financial-accounts
-app.MapGet("/api/financial-accounts", async (AppDbContext db) =>
+app.MapGet("/api/financial-accounts", async Task<IResult> (AppDbContext db) =>
 {
-    return await db.FinancialAccounts.OrderBy(a => a.Name).ToListAsync();
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    var accounts = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .OrderBy(a => a.Name)
+        .ToListAsync();
+
+    return Results.Ok(accounts);
 });
 
 // POST /api/financial-accounts
-app.MapPost("/api/financial-accounts", async (AppDbContext db, FinancialAccount account) =>
+app.MapPost("/api/financial-accounts", async Task<IResult> (AppDbContext db, FinancialAccount account) =>
 {
-    // UserId should be passed from authenticated user context
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    account.UserId = userId.Value;
+    account.CreatedAt = DateTime.UtcNow;
     db.FinancialAccounts.Add(account);
     await db.SaveChangesAsync();
     return Results.Created($"/api/financial-accounts/{account.Id}", account);
 });
 
 // DELETE /api/financial-accounts/{id}
-app.MapDelete("/api/financial-accounts/{id}", async (AppDbContext db, int id) =>
+app.MapDelete("/api/financial-accounts/{id}", async Task<IResult> (AppDbContext db, int id) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
     var account = await db.FinancialAccounts.FindAsync(id);
     if (account == null) return Results.NotFound();
-    
-    // Don't allow deletion of default accounts (Cash, Bank, Savings)
-    if (account.Id <= 3) return Results.BadRequest("Cannot delete default financial accounts");
-    
+
+    // Verify ownership
+    if (account.UserId != userId.Value) return Results.Forbid();
+
     db.FinancialAccounts.Remove(account);
     await db.SaveChangesAsync();
     return Results.NoContent();
@@ -197,27 +241,38 @@ app.MapPost("/api/categories", async (AppDbContext db, Category category) =>
 });
 
 // DELETE /api/categories/{id}
-app.MapDelete("/api/categories/{id}", async (AppDbContext db, int id) =>
+app.MapDelete("/api/categories/{id}", async Task<IResult> (AppDbContext db, int id) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
     var category = await db.Categories.FindAsync(id);
     if (category == null) return Results.NotFound();
-    
+
     // Don't allow deletion of "Other" categories (fallback categories)
-    if (category.Id == 6 || category.Id == 7) 
+    if (category.Id == 6 || category.Id == 7)
         return Results.BadRequest("Cannot delete 'Other' categories");
-    
+
     // Move all transactions from this category to appropriate "Other" category
     var fallbackCategoryId = category.Type == "expense" ? 6 : 7; // Other or Other Income
-    
+
+    // Get user's financial account IDs
+    var userAccountIds = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Only move the logged-in user's transactions to the fallback category
     var transactions = await db.Transactions
         .Where(t => t.CategoryId == id)
+        .Where(t => userAccountIds.Contains(t.FinancialAccountId))
         .ToListAsync();
-        
+
     foreach (var transaction in transactions)
     {
         transaction.CategoryId = fallbackCategoryId;
     }
-    
+
     db.Categories.Remove(category);
     await db.SaveChangesAsync();
     return Results.NoContent();
@@ -226,13 +281,26 @@ app.MapDelete("/api/categories/{id}", async (AppDbContext db, int id) =>
 // ============ TRANSACTIONS ============
 
 // GET /api/transactions
-app.MapGet("/api/transactions", async (AppDbContext db, int? financialAccountId, string? month) =>
+app.MapGet("/api/transactions", async Task<IResult> (AppDbContext db, int? financialAccountId, string? month) =>
 {
-    var query = db.Transactions.Include(t => t.Category).AsQueryable();
-    
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    // Get user's financial account IDs
+    var userAccountIds = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Filter transactions by user's accounts
+    var query = db.Transactions
+        .Include(t => t.Category)
+        .Where(t => userAccountIds.Contains(t.FinancialAccountId))
+        .AsQueryable();
+
     if (financialAccountId.HasValue)
         query = query.Where(t => t.FinancialAccountId == financialAccountId.Value);
-        
+
     if (!string.IsNullOrEmpty(month))
     {
         var date = DateTime.ParseExact(month, "yyyy-MM", null);
@@ -240,13 +308,23 @@ app.MapGet("/api/transactions", async (AppDbContext db, int? financialAccountId,
         var endOfMonth = startOfMonth.AddMonths(1);
         query = query.Where(t => t.Date >= startOfMonth && t.Date < endOfMonth);
     }
-    
-    return await query.OrderByDescending(t => t.Date).ToListAsync();
+
+    var transactions = await query.OrderByDescending(t => t.Date).ToListAsync();
+    return Results.Ok(transactions);
 });
 
 // POST /api/transactions
-app.MapPost("/api/transactions", async (AppDbContext db, Transaction transaction) =>
+app.MapPost("/api/transactions", async Task<IResult> (AppDbContext db, Transaction transaction) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    // Verify the financial account belongs to the user
+    var account = await db.FinancialAccounts.FindAsync(transaction.FinancialAccountId);
+    if (account == null) return Results.NotFound("Financial account not found");
+    if (account.UserId != userId.Value) return Results.Forbid();
+
+    transaction.CreatedAt = DateTime.UtcNow;
     db.Transactions.Add(transaction);
     await db.SaveChangesAsync();
     return Results.Created($"/api/transactions/{transaction.Id}", transaction);
@@ -255,60 +333,104 @@ app.MapPost("/api/transactions", async (AppDbContext db, Transaction transaction
 // ============ SUMMARY AND BALANCE ============
 
 // GET /api/summary - Total summary across all financial accounts
-app.MapGet("/api/summary", async (AppDbContext db, string month) =>
+app.MapGet("/api/summary", async Task<IResult> (AppDbContext db, string month) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
     var date = DateTime.ParseExact(month, "yyyy-MM", null);
     var startOfMonth = new DateTime(date.Year, date.Month, 1);
     var endOfMonth = startOfMonth.AddMonths(1);
-    
+
+    // Get user's financial account IDs
+    var userAccountIds = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Filter transactions by user's accounts
     var transactions = await db.Transactions
+        .Where(t => userAccountIds.Contains(t.FinancialAccountId))
         .Where(t => t.Date >= startOfMonth && t.Date < endOfMonth)
         .ToListAsync();
-    
+
     var totalIncome = transactions.Where(t => t.Type == "income").Sum(t => t.Amount);
     var totalExpenses = transactions.Where(t => t.Type == "expense").Sum(t => t.Amount);
-    
-    return new
+
+    return Results.Ok(new
     {
         TotalIncome = totalIncome,
         TotalExpenses = totalExpenses,
         Net = totalIncome - totalExpenses
-    };
+    });
 });
 
 // GET /api/financial-accounts/{id}/balance
-app.MapGet("/api/financial-accounts/{id}/balance", async (AppDbContext db, int id) =>
+app.MapGet("/api/financial-accounts/{id}/balance", async Task<IResult> (AppDbContext db, int id) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    // Verify the financial account belongs to the user
+    var account = await db.FinancialAccounts.FindAsync(id);
+    if (account == null) return Results.NotFound();
+    if (account.UserId != userId.Value) return Results.Forbid();
+
     var transactions = await db.Transactions
         .Where(t => t.FinancialAccountId == id)
         .ToListAsync();
 
     var income = transactions.Where(t => t.Type == "income").Sum(t => t.Amount);
     var expenses = transactions.Where(t => t.Type == "expense").Sum(t => t.Amount);
+    var balance = income - expenses;
 
-    return income - expenses;
+    return Results.Ok(balance);
 });
 
 // GET /api/total-balance - Total balance across all financial accounts
-app.MapGet("/api/total-balance", async (AppDbContext db) =>
+app.MapGet("/api/total-balance", async Task<IResult> (AppDbContext db) =>
 {
-    var transactions = await db.Transactions.ToListAsync();
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
+    // Get user's financial account IDs
+    var userAccountIds = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Filter transactions by user's accounts
+    var transactions = await db.Transactions
+        .Where(t => userAccountIds.Contains(t.FinancialAccountId))
+        .ToListAsync();
 
     var income = transactions.Where(t => t.Type == "income").Sum(t => t.Amount);
     var expenses = transactions.Where(t => t.Type == "expense").Sum(t => t.Amount);
+    var balance = income - expenses;
 
-    return income - expenses;
+    return Results.Ok(balance);
 });
 
 // GET /api/categories/{month}/spending
-app.MapGet("/api/categories/{month}/spending", async (AppDbContext db, string month, int? financialAccountId) =>
+app.MapGet("/api/categories/{month}/spending", async Task<IResult> (AppDbContext db, string month, int? financialAccountId) =>
 {
+    var userId = UserContext.CurrentUserId;
+    if (!userId.HasValue) return Results.Unauthorized();
+
     var date = DateTime.ParseExact(month, "yyyy-MM", null);
     var startOfMonth = new DateTime(date.Year, date.Month, 1);
     var endOfMonth = startOfMonth.AddMonths(1);
 
+    // Get user's financial account IDs
+    var userAccountIds = await db.FinancialAccounts
+        .Where(a => a.UserId == userId.Value)
+        .Select(a => a.Id)
+        .ToListAsync();
+
+    // Filter transactions by user's accounts
     var query = db.Transactions
         .Include(t => t.Category)
+        .Where(t => userAccountIds.Contains(t.FinancialAccountId))
         .Where(t => t.Date >= startOfMonth && t.Date < endOfMonth);
 
     if (financialAccountId.HasValue)
@@ -327,7 +449,7 @@ app.MapGet("/api/categories/{month}/spending", async (AppDbContext db, string mo
         })
         .ToList();
 
-    return categorySpending;
+    return Results.Ok(categorySpending);
 });
 
 app.Run();
