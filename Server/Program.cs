@@ -9,22 +9,25 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
-// Log which connection string is being used (for debugging)
-Console.WriteLine($"DATABASE_URL env: {(Environment.GetEnvironmentVariable("DATABASE_URL") != null ? "SET" : "NOT SET")}");
-Console.WriteLine($"Connection string LENGTH: {connectionString?.Length}");
-Console.WriteLine($"Connection string FULL: {connectionString}");
-
 if (string.IsNullOrEmpty(connectionString))
 {
     throw new InvalidOperationException("No database connection string found! Set DATABASE_URL environment variable or ConnectionStrings:DefaultConnection in appsettings.json");
 }
 
+// Convert PostgreSQL URI format to Npgsql connection string format
+if (connectionString.StartsWith("postgres://") || connectionString.StartsWith("postgresql://"))
+{
+    var uri = new Uri(connectionString);
+    connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={uri.UserInfo.Split(':')[0]};Password={uri.UserInfo.Split(':')[1]};SSL Mode=Require;Trust Server Certificate=true";
+    Console.WriteLine("Converted PostgreSQL URI to connection string format");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     // Auto-detect database type from connection string
-    if (connectionString.StartsWith("postgresql://") || connectionString.StartsWith("postgres://"))
+    if (connectionString.Contains("Host=") && connectionString.Contains("Database="))
     {
-        // PostgreSQL
+        // PostgreSQL (Npgsql format)
         Console.WriteLine("Using PostgreSQL database");
         options.UseNpgsql(connectionString);
     }
