@@ -5,7 +5,10 @@ using Finance_Tracking.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// Read from DATABASE_URL (Railway standard) or ConnectionStrings:DefaultConnection
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     // Auto-detect database type from connection string
