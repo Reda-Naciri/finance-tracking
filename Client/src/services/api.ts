@@ -23,13 +23,19 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
   return response.json();
 };
 
-// Auth (hardcoded for single user)
+// Auth - authenticate against database
 export const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
-  // Hardcoded single user auth as per requirements
-  if (credentials.email === 'reda_naciri@icloud.com' && credentials.password === '123456789') {
-    return { token: 'LOCAL_ACCESS_GRANTED' };
+  const response = await fetch(`${API_BASE_URL}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
+
+  if (!response.ok) {
+    throw new Error('Invalid credentials');
   }
-  throw new Error('Invalid credentials');
+
+  return handleResponse<AuthResponse>(response);
 };
 
 // Financial Accounts

@@ -20,17 +20,9 @@ const Login = () => {
         setIsLoading(true);
 
         try {
-            if (
-                email === 'reda_naciri@icloud.com' &&
-                password === '123456789'
-            ) {
-                // fake token for personal use
-                login('LOCAL_ACCESS_GRANTED');
-                navigate('/');
-                return;
-            }
-
-            throw new Error('Invalid credentials');
+            const response = await apiLogin({ email, password });
+            login(response.token);
+            navigate('/');
         } catch (error) {
             toast({
                 title: 'Login failed',

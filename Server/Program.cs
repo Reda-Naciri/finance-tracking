@@ -101,6 +101,54 @@ using (var scope = app.Services.CreateScope())
 
 // Minimal API Endpoints
 
+// ============ AUTHENTICATION ============
+
+// POST /api/register
+app.MapPost("/api/register", async (AppDbContext db, RegisterRequest registerRequest) =>
+{
+    // Check if user already exists
+    var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == registerRequest.Email);
+    if (existingUser != null)
+        return Results.BadRequest(new { message = "User with this email already exists" });
+
+    var user = new User
+    {
+        Email = registerRequest.Email,
+        FullName = registerRequest.FullName,
+        Password = registerRequest.Password, // In production, hash the password
+        CreatedAt = DateTime.UtcNow
+    };
+
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
+
+    // Create default financial accounts for the new user
+    var defaultAccounts = new[]
+    {
+        new FinancialAccount { Name = "Cash", UserId = user.Id, CreatedAt = DateTime.UtcNow },
+        new FinancialAccount { Name = "Bank", UserId = user.Id, CreatedAt = DateTime.UtcNow },
+        new FinancialAccount { Name = "Savings", UserId = user.Id, CreatedAt = DateTime.UtcNow }
+    };
+
+    db.FinancialAccounts.AddRange(defaultAccounts);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/users/{user.Id}", new { userId = user.Id, email = user.Email, fullName = user.FullName });
+});
+
+// POST /api/login
+app.MapPost("/api/login", async (AppDbContext db, LoginRequest loginRequest) =>
+{
+    var user = await db.Users
+        .FirstOrDefaultAsync(u => u.Email == loginRequest.Email && u.Password == loginRequest.Password);
+
+    if (user == null)
+        return Results.Unauthorized();
+
+    // Return a simple token (in production, use JWT or proper authentication)
+    return Results.Ok(new { token = $"USER_{user.Id}_AUTHENTICATED", userId = user.Id });
+});
+
 // ============ FINANCIAL ACCOUNTS ============
 
 // GET /api/financial-accounts
@@ -112,7 +160,7 @@ app.MapGet("/api/financial-accounts", async (AppDbContext db) =>
 // POST /api/financial-accounts
 app.MapPost("/api/financial-accounts", async (AppDbContext db, FinancialAccount account) =>
 {
-    account.UserId = 1; // Hardcoded for single user
+    // UserId should be passed from authenticated user context
     db.FinancialAccounts.Add(account);
     await db.SaveChangesAsync();
     return Results.Created($"/api/financial-accounts/{account.Id}", account);
@@ -283,3 +331,7 @@ app.MapGet("/api/categories/{month}/spending", async (AppDbContext db, string mo
 });
 
 app.Run();
+
+// Request/Response models
+public record LoginRequest(string Email, string Password);
+public record RegisterRequest(string Email, string FullName, string Password);

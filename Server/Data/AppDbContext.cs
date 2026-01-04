@@ -81,15 +81,6 @@ public class AppDbContext : DbContext
             new Category { Id = 7, Name = "Other Income", Type = "income", CreatedAt = DateTime.UtcNow }
         );
 
-        // Seed default user and financial accounts
-        modelBuilder.Entity<User>().HasData(
-            new User { Id = 1, Email = "reda_naciri@icloud.com", FullName = "Reda Naciri", Password = "123456789", CreatedAt = DateTime.UtcNow }
-        );
-
-        modelBuilder.Entity<FinancialAccount>().HasData(
-            new FinancialAccount { Id = 1, Name = "Cash", UserId = 1, CreatedAt = DateTime.UtcNow },
-            new FinancialAccount { Id = 2, Name = "Bank", UserId = 1, CreatedAt = DateTime.UtcNow },
-            new FinancialAccount { Id = 3, Name = "Savings", UserId = 1, CreatedAt = DateTime.UtcNow }
-        );
+        // No seeded users - users must be created through the application
     }
 }
