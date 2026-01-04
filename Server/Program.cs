@@ -11,7 +11,8 @@ var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
 
 // Log which connection string is being used (for debugging)
 Console.WriteLine($"DATABASE_URL env: {(Environment.GetEnvironmentVariable("DATABASE_URL") != null ? "SET" : "NOT SET")}");
-Console.WriteLine($"Connection string starts with: {connectionString?.Substring(0, Math.Min(20, connectionString?.Length ?? 0))}...");
+Console.WriteLine($"Connection string LENGTH: {connectionString?.Length}");
+Console.WriteLine($"Connection string FULL: {connectionString}");
 
 if (string.IsNullOrEmpty(connectionString))
 {
