@@ -1,9 +1,11 @@
-FROM node:20-alpine AS build
+FROM node:20 AS build
 WORKDIR /app
 
 # Copy Client directory
 COPY Client/package*.json ./
-RUN npm install
+
+# Clean install with all optional dependencies
+RUN npm ci --include=optional || npm install --force
 
 # Copy source code
 COPY Client/ .
