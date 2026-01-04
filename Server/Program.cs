@@ -8,13 +8,20 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    // Use SQLite if connection string contains .db file, otherwise use SQL Server
-    if (connectionString?.Contains(".db") == true)
+    // Auto-detect database type from connection string
+    if (connectionString?.StartsWith("postgresql://") == true || connectionString?.StartsWith("postgres://") == true)
     {
+        // PostgreSQL
+        options.UseNpgsql(connectionString);
+    }
+    else if (connectionString?.Contains(".db") == true)
+    {
+        // SQLite
         options.UseSqlite(connectionString);
     }
     else
     {
+        // SQL Server (default)
         options.UseSqlServer(connectionString);
     }
 });
