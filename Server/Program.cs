@@ -202,28 +202,24 @@ app.MapGet("/api/summary", async (AppDbContext db, string month) =>
 // GET /api/financial-accounts/{id}/balance
 app.MapGet("/api/financial-accounts/{id}/balance", async (AppDbContext db, int id) =>
 {
-    var income = await db.Transactions
-        .Where(t => t.FinancialAccountId == id && t.Type == "income")
-        .SumAsync(t => t.Amount);
-        
-    var expenses = await db.Transactions
-        .Where(t => t.FinancialAccountId == id && t.Type == "expense")
-        .SumAsync(t => t.Amount);
-        
+    var transactions = await db.Transactions
+        .Where(t => t.FinancialAccountId == id)
+        .ToListAsync();
+
+    var income = transactions.Where(t => t.Type == "income").Sum(t => t.Amount);
+    var expenses = transactions.Where(t => t.Type == "expense").Sum(t => t.Amount);
+
     return income - expenses;
 });
 
 // GET /api/total-balance - Total balance across all financial accounts
 app.MapGet("/api/total-balance", async (AppDbContext db) =>
 {
-    var income = await db.Transactions
-        .Where(t => t.Type == "income")
-        .SumAsync(t => t.Amount);
-        
-    var expenses = await db.Transactions
-        .Where(t => t.Type == "expense")
-        .SumAsync(t => t.Amount);
-        
+    var transactions = await db.Transactions.ToListAsync();
+
+    var income = transactions.Where(t => t.Type == "income").Sum(t => t.Amount);
+    var expenses = transactions.Where(t => t.Type == "expense").Sum(t => t.Amount);
+
     return income - expenses;
 });
 
@@ -233,15 +229,17 @@ app.MapGet("/api/categories/{month}/spending", async (AppDbContext db, string mo
     var date = DateTime.ParseExact(month, "yyyy-MM", null);
     var startOfMonth = new DateTime(date.Year, date.Month, 1);
     var endOfMonth = startOfMonth.AddMonths(1);
-    
+
     var query = db.Transactions
         .Include(t => t.Category)
         .Where(t => t.Date >= startOfMonth && t.Date < endOfMonth);
-        
+
     if (financialAccountId.HasValue)
         query = query.Where(t => t.FinancialAccountId == financialAccountId.Value);
-    
-    var categorySpending = await query
+
+    var transactions = await query.ToListAsync();
+
+    var categorySpending = transactions
         .GroupBy(t => new { t.CategoryId, t.Category.Name, t.Type })
         .Select(g => new
         {
@@ -250,8 +248,8 @@ app.MapGet("/api/categories/{month}/spending", async (AppDbContext db, string mo
             Type = g.Key.Type,
             Amount = g.Sum(t => t.Amount)
         })
-        .ToListAsync();
-        
+        .ToList();
+
     return categorySpending;
 });
 
